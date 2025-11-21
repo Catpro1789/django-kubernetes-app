@@ -45,7 +45,7 @@ if ! groups $USER | grep -q "\bmicrok8s\b"; then
     exit 0
 fi
 
-# Включаем нужные аддоны
+# Включаем нужные аддоны по одному
 echo "Включаем DNS, storage и ingress..."
 microk8s enable dns
 microk8s enable storage
@@ -63,8 +63,11 @@ microk8s status --wait-ready
 echo "Собираем Docker-образ Django..."
 docker build -t $DJANGO_IMAGE .
 
+echo "Сохраняем образ в tar для microk8s..."
+docker save $DJANGO_IMAGE -o /tmp/django-kubernetes-app.tar
+
 echo "Импортируем образ в microk8s..."
-microk8s ctr image import $DJANGO_IMAGE
+microk8s ctr image import /tmp/django-kubernetes-app.tar
 
 # -------------------------
 # 4. Деплой Kubernetes
