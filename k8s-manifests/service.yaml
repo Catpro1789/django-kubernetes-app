@@ -3,11 +3,10 @@ kind: Service
 metadata:
   name: django-service
   namespace: django-app
-
 spec:
   selector:
     app: django-app
   ports:
-  - port: 80
-    targetPort: 8000
-  type: NodePort
+    - port: 80
+      targetPort: 8000
+  type: LoadBalancer
