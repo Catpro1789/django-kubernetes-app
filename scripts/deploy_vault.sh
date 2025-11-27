@@ -3,6 +3,7 @@ set -e
 
 VAULT_DIR="docker/vault"
 
+# Проверка наличия Docker
 echo "=== Проверка наличия Docker ==="
 if ! command -v docker >/dev/null 2>&1; then
     echo "Docker не найден — устанавливаю..."
@@ -20,19 +21,29 @@ if ! command -v docker >/dev/null 2>&1; then
     sudo apt install -y docker-ce docker-ce-cli containerd.io
 fi
 
+# Проверка Docker Compose
 echo "=== Проверка наличия Docker Compose ==="
-if ! command -v docker compose >/dev/null 2>&1; then
+if ! docker compose version >/dev/null 2>&1; then
     echo "Устанавливаю docker-compose-plugin..."
     sudo apt install -y docker-compose-plugin
 fi
 
+# Проверка доступа к Docker
+echo "=== Проверка доступа к Docker daemon ==="
+if ! docker ps >/dev/null 2>&1; then
+    echo "⚠ Нет прав на доступ к Docker. Будем использовать sudo..."
+    DOCKER_CMD="sudo docker"
+else
+    DOCKER_CMD="docker"
+fi
+
+# Создание каталога Vault
 echo "=== Создание каталога Vault ==="
 mkdir -p "$VAULT_DIR"
 
+# Создание docker-compose.yml
 echo "=== Создание docker-compose.yml ==="
 cat > "$VAULT_DIR/docker-compose.yml" <<EOF
-version: '3.9'
-
 services:
   vault:
     image: hashicorp/vault:1.15
@@ -49,27 +60,30 @@ services:
       - ./vault-data:/vault/data
 EOF
 
+# Запуск Vault
 echo "=== Запуск Vault ==="
-docker compose -f "$VAULT_DIR/docker-compose.yml" up -d
+$DOCKER_CMD compose -f "$VAULT_DIR/docker-compose.yml" up -d
 
 echo "=== Ожидание запуска Vault... ==="
 sleep 5
 
+# Проверка статуса
 echo "=== Проверка статуса Vault ==="
 curl -s http://127.0.0.1:8200/v1/sys/health | jq || true
 
-echo "=== Экспорт VAULT_ADDR и root токена ==="
+# Экспорт VAULT_ADDR и root токена
 export VAULT_ADDR="http://127.0.0.1:8200"
 export VAULT_TOKEN="root"
 
+# Создание базовой структуры секретов
 echo "=== Создание базовой структуры секретов ==="
 vault secrets enable -path=django kv-v2 || true
-
 vault kv put django/app \
     DB_NAME="myapp" \
     DB_USER="django" \
     DEBUG="False"
 
+# Получение тестового секрета
 echo "=== Получение тестового секрета ==="
 vault kv get django/app || true
 
@@ -77,4 +91,3 @@ echo
 echo "=== Vault успешно развернут и базово настроен ==="
 echo "Адрес: http://127.0.0.1:8200"
 echo "Root token: root"
-echo
