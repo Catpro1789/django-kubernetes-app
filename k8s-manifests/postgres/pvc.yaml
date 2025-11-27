@@ -2,7 +2,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: postgres-pvc
-  namespace: django
+  namespace: django-app
 spec:
   accessModes:
     - ReadWriteOnce
