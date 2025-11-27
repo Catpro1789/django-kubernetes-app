@@ -2,12 +2,12 @@ apiVersion: v1
 kind: Service
 metadata:
   name: django-service
-  namespace: django
+  namespace: django-app
+
 spec:
   selector:
     app: django-app
   ports:
-    - port: 80
-      targetPort: 8000
-      protocol: TCP
-  type: LoadBalancer
+  - port: 80
+    targetPort: 8000
+  type: NodePort
