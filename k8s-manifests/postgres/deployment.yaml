@@ -1,43 +1,72 @@
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: postgres-deployment
-  namespace: django-app
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: postgres
-  template:
-    metadata:
-      labels:
-        app: postgres
-    spec:
-      containers:
-        - name: postgres
-          image: postgres:13
-          ports:
-            - containerPort: 5432
-          env:
-            - name: POSTGRES_DB
-              valueFrom:
-                secretKeyRef:
-                  name: django-secrets
-                  key: db_name
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: django-secrets
-                  key: db_user
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: django-secrets
-                  key: db_password
-          volumeMounts:
-            - name: postgres-storage
-              mountPath: /var/lib/postgresql/data
-      volumes:
-        - name: postgres-storage
-          persistentVolumeClaim:
-            claimName: postgres-pvc
+name: Deploy Django App to Kubernetes
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  K8S_NAMESPACE: django-app
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run tests
+        run: python manage.py test
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Kubeconfig
+        run: echo "${{ secrets.KUBE_CONFIG }}" > kubeconfig && export KUBECONFIG=kubeconfig
+      - name: Create Kubernetes Secret
+        run: |
+          kubectl create secret generic django-secrets \
+            --namespace ${{ env.K8S_NAMESPACE }} \
+            --from-literal=db_name="${{ secrets.DB_NAME }}" \
+            --from-literal=db_user="${{ secrets.DB_USER }}" \
+            --from-literal=db_password="${{ secrets.DB_PASSWORD }}" \
+            --from-literal=secret_key="${{ secrets.SECRET_KEY }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl create namespace ${{ env.K8S_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f k8s-manifests/ -n ${{ env.K8S_NAMESPACE }}
+          kubectl set image deployment/django-deployment django-app=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest -n ${{ env.K8S_NAMESPACE }}
+          kubectl rollout status deployment/django-deployment -n ${{ env.K8S_NAMESPACE }} --timeout=300s
+          kubectl get pods,svc,ingress -n ${{ env.K8S_NAMESPACE }}
