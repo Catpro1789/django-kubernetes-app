@@ -4,8 +4,7 @@ metadata:
   name: postgres-pvc
   namespace: django-app
 spec:
-  accessModes:
-    - ReadWriteOnce
+  accessModes: ["ReadWriteOnce"]
   resources:
     requests:
       storage: 5Gi
