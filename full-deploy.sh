@@ -12,6 +12,16 @@ else
     echo "Docker уже установлен"
 fi
 
+# Проверка прав на Docker
+if ! docker info &> /dev/null
+then
+    echo "⚠️  У вас нет прав на доступ к Docker daemon"
+    echo "Добавьте пользователя в группу docker:"
+    echo "sudo usermod -aG docker \$USER && newgrp docker"
+    echo "После этого перезапустите скрипт"
+    exit 1
+fi
+
 echo "=== 2. Проверка и установка kubectl ==="
 if ! command -v kubectl &> /dev/null
 then
@@ -52,7 +62,7 @@ metadata:
   namespace: metallb-system
 spec:
   addresses:
-  - 172.17.255.200-172.17.250
+  - 172.17.255.200-172.17.255.250
 EOF
 cat <<EOF | kubectl apply -f -
 apiVersion: metallb.io/v1beta1
@@ -86,14 +96,7 @@ kubectl create secret generic django-secrets -n django-app \
   --from-literal=secret_key="django-insecure-key" || true
 
 echo "=== 12. Деплой Postgres и Django ==="
-kubectl apply -f k8s-manifests/postgres/pvc.yaml
-kubectl apply -f k8s-manifests/postgres/deployment.yaml
-kubectl apply -f k8s-manifests/postgres/service.yaml
-kubectl apply -f k8s-manifests/configmap.yaml
-kubectl apply -f k8s-manifests/secret.yaml
-kubectl apply -f k8s-manifests/deployment.yaml
-kubectl apply -f k8s-manifests/service.yaml
-kubectl apply -f k8s-manifests/ingress.yaml
+kubectl apply -f k8s-manifests/ -n django-app
 
 echo "=== 13. Ожидание запуска подов ==="
 kubectl rollout status deployment/django-deployment -n django-app --timeout=300s
@@ -107,7 +110,3 @@ kubectl get ingress -n django-app
 echo "=== 15. Port-forward для локального теста ==="
 kubectl port-forward svc/django-service -n django-app 8080:80 &
 echo "Приложение доступно на http://localhost:8080"
-
-echo "=== 16. Завершено ==="
-echo "Проверка логов: kubectl logs -f deployment/django-deployment -n django-app"
-echo "Масштабирование: kubectl scale deployment django-deployment --replicas=6 -n django-app"
