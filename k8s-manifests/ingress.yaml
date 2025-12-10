@@ -3,9 +3,12 @@ kind: Ingress
 metadata:
   name: django-ingress
   namespace: django-app
+annotations:
+  nginx.ingress.kubernetes.io/rewrite-target: /
 spec:
   rules:
-  - http:
+  - host: "localhost"
+    http:
       paths:
       - path: /
         pathType: Prefix
