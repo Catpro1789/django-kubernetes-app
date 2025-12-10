@@ -17,7 +17,7 @@ echo "=== 4. Установка Helm ==="
 curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
 
 echo "=== 5. Запуск Minikube ==="
-minikube start --driver=virtualbox --cpus=3 --memory=8192
+minikube start --driver=virtualbox --cpus=2 --memory=3072
 
 echo "=== 6. Настройка MetalLB ==="
 kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.3/config/manifests/metallb-native.yaml
