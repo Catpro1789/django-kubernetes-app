@@ -1,4 +1,4 @@
-name: CI/CD Django App
+name: Deploy Django App to Kubernetes
 
 on:
   push:
@@ -6,9 +6,14 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  K8S_NAMESPACE: django-app
+
 jobs:
-  deploy:
-    runs-on: self-hosted
+  test:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -20,27 +25,53 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       - name: Run tests
-        run: python manage.py test || true
-      - name: Use Minikube Docker
-        run: eval $(minikube -p minikube docker-env)
-      - name: Build Docker image
-        run: docker build -t django-kubernetes-app:latest .
-      - name: Create/update secrets
         run: |
-          kubectl create secret generic django-secrets -n django-app \
-            --from-literal=db_user="django_user" \
-            --from-literal=db_password="SuperSecret123!" \
-            --from-literal=secret_key="django-insecure-key" \
-            --dry-run=client -o yaml | kubectl apply -f -
-      - name: Apply Kubernetes manifests
-        run: kubectl apply -f k8s-manifests/ -n django-app
-      - name: Update Django Deployment image
+          python manage.py test
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix={{branch}}-
+            latest
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Kubeconfig
+        uses: azure/k8s-set-context@v3
+        with:
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+      - name: Deploy to Kubernetes
         run: |
-          kubectl set image deployment/django-deployment \
-            django-app=django-kubernetes-app:latest -n django-app
-          kubectl rollout status deployment/django-deployment -n django-app --timeout=300s
-      - name: Check Kubernetes resources
-        run: |
-          kubectl get pods -n django-app
-          kubectl get svc -n django-app
-          kubectl get ingress -n django-app
+          kubectl create namespace ${{ env.K8S_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f k8s-manifests/ -n ${{ env.K8S_NAMESPACE }}
+          kubectl set image deployment/django-deployment django-app=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest -n ${{ env.K8S_NAMESPACE }}
+          kubectl rollout status deployment/django-deployment -n ${{ env.K8S_NAMESPACE }} --timeout=300s
+          kubectl get pods,svc,ingress -n ${{ env.K8S_NAMESPACE }}
