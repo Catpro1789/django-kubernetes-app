@@ -12,10 +12,14 @@ spec:
     metadata:
       labels:
         app: django-app
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
       - name: django-app
-        image: django-kubernetes-app:latest
+        image: your-username/django-kubernetes-app:latest
         ports:
         - containerPort: 8000
         envFrom:
@@ -23,9 +27,15 @@ spec:
             name: django-config
         - secretRef:
             name: django-secrets
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
         readinessProbe:
           httpGet:
-            path: /health/
+            path: /
             port: 8000
           initialDelaySeconds: 5
           periodSeconds: 5
