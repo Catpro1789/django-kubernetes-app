@@ -5,17 +5,17 @@ RUN apt-get update && apt-get install -y build-essential libpq-dev
 
 WORKDIR /app
 
-# Копируем зависимости
+# Копируем и устанавливаем зависимости Python
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Копируем проект
 COPY . .
 
-# Сборка статики
+# Собираем статику
 RUN python manage.py collectstatic --noinput
 
-# Запуск через gunicorn
+# Запуск через Gunicorn
 CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "django_app.wsgi:application"]
 
 EXPOSE 8000
